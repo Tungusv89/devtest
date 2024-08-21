@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app-deployment
+  labels:
+    app: web-app
+spec:
+  replicas: 4  # Устанавливаем количество реплик на 4, чтобы справляться с пиковой нагрузкой
+  selector:
+    matchLabels:
+      app: web-app
+  template:
+    metadata:
+      labels:
+        app: web-app
+    spec:
+      containers:
+      - name: web-app
+        image: your-docker-image:latest  # Указываем образ Docker вашего приложения
+        resources:
+          requests:
+            memory: "128Mi"  # Минимальные требования по памяти
+            cpu: "100m"  # Минимальные требования по CPU
+          limits:
+            memory: "128Mi"  # Ограничения по памяти
+            cpu: "500m"  # Ограничения по CPU для первых запросов
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 10  # Задержка перед проверкой готовности, чтобы дать время на инициализацию
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        env:
+        - name: NODE_ENV
+          value: "production"
+        ports:
+        - containerPort: 8080
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - web-app
+            topologyKey: "kubernetes.io/hostname"  # Обеспечиваем распределение подов по разным нодам для отказоустойчивости
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1  # Максимум 1 под может быть недоступен во время обновления
+      maxSurge: 1  # Максимум 1 дополнительный под может быть создан во время обновления
+  autoscaler:
+    apiVersion: autoscaling/v1
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: web-app-autoscaler
+    spec:
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: web-app-deployment
+      minReplicas: 1  # Минимальное количество реплик ночью
+      maxReplicas: 4  # Максимальное количество реплик днем
+      targetCPUUtilizationPercentage: 50  # Целевое использование CPU для автоскейлинга
